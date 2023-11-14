@@ -107,9 +107,9 @@ int coctx_make(coctx_t* ctx, coctx_pfn_t pfn, const void* s, const void* s1) {
   return 0;
 }
 #elif defined(__x86_64__)
-int coctx_make(coctx_t* ctx, coctx_pfn_t pfn, const void* s, const void* s1) {
-  char* sp = ctx->ss_sp + ctx->ss_size - sizeof(void*);
-  sp = (char*)((unsigned long)sp & -16LL);
+int coctx_make(coctx_t* ctx, coctx_pfn_t pfn, const void* s, const void* s1) {   // 设置ctx
+  char* sp = ctx->ss_sp + ctx->ss_size - sizeof(void*);  // 预留8个字节
+  sp = (char*)((unsigned long)sp & -16LL);   // sp地址16个字节对齐;  -16 的补码表示为 1111 0000
 
   memset(ctx->regs, 0, sizeof(ctx->regs));
   void** ret_addr = (void**)(sp);

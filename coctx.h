@@ -30,10 +30,10 @@ struct coctx_t
 #if defined(__i386__)
 	void *regs[ 8 ];
 #else
-	void *regs[ 14 ];
+	void *regs[ 14 ];  // 寄存器
 #endif
-	size_t ss_size;
-	char *ss_sp;
+	size_t ss_size;   // 用stack_mem初始化 参考 co_create_env
+	char *ss_sp;      // 栈空间   // 当前已分配内存块起始地址
 	
 };
 

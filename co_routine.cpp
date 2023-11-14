@@ -50,7 +50,7 @@ struct stCoEpoll_t;
 
 struct stCoRoutineEnv_t
 {
-	stCoRoutine_t *pCallStack[ 128 ];
+	stCoRoutine_t *pCallStack[ 128 ];  // 最多只支持128层的协程嵌套
 	int iCallStackSize;
 	stCoEpoll_t *pEpoll;
 
@@ -272,7 +272,7 @@ stStackMem_t* co_alloc_stackmem(unsigned int stack_size)
 	stack_mem->occupy_co= NULL;
 	stack_mem->stack_size = stack_size;
 	stack_mem->stack_buffer = (char*)malloc(stack_size);
-	stack_mem->stack_bp = stack_mem->stack_buffer + stack_size;
+	stack_mem->stack_bp = stack_mem->stack_buffer + stack_size;   //下一块内存起始地址 
 	return stack_mem;
 }
 
@@ -284,7 +284,7 @@ stShareStack_t* co_alloc_sharestack(int count, int stack_size)
 
 	//alloc stack array
 	share_stack->count = count;
-	stStackMem_t** stack_array = (stStackMem_t**)calloc(count, sizeof(stStackMem_t*));
+	stStackMem_t** stack_array = (stStackMem_t**)calloc(count, sizeof(stStackMem_t*));   // 从堆上分配内存
 	for (int i = 0; i < count; i++)
 	{
 		stack_array[i] = co_alloc_stackmem(stack_size);
@@ -445,7 +445,7 @@ static int CoRoutineFunc( stCoRoutine_t *co,void * )
 {
 	if( co->pfn )
 	{
-		co->pfn( co->arg );
+		co->pfn( co->arg );  // 执行具体的任务
 	}
 	co->cEnd = 1;
 
@@ -459,7 +459,7 @@ static int CoRoutineFunc( stCoRoutine_t *co,void * )
 
 
 struct stCoRoutine_t *co_create_env( stCoRoutineEnv_t * env, const stCoRoutineAttr_t* attr,
-		pfn_co_routine_t pfn,void *arg )
+		pfn_co_routine_t pfn,void *arg )   // 根据env创建协程,栈大小限定，ctx栈设置
 {
 
 	stCoRoutineAttr_t at;
@@ -476,7 +476,7 @@ struct stCoRoutine_t *co_create_env( stCoRoutineEnv_t * env, const stCoRoutineAt
 		at.stack_size = 1024 * 1024 * 8;
 	}
 
-	if( at.stack_size & 0xFFF ) 
+	if( at.stack_size & 0xFFF )   // 4k的倍数
 	{
 		at.stack_size &= ~0xFFF;
 		at.stack_size += 0x1000;
@@ -499,12 +499,12 @@ struct stCoRoutine_t *co_create_env( stCoRoutineEnv_t * env, const stCoRoutineAt
 	}
 	else
 	{
-		stack_mem = co_alloc_stackmem(at.stack_size);
+		stack_mem = co_alloc_stackmem(at.stack_size);   // 不共享会分配一块内存
 	}
 	lp->stack_mem = stack_mem;
 
-	lp->ctx.ss_sp = stack_mem->stack_buffer;
-	lp->ctx.ss_size = at.stack_size;
+	lp->ctx.ss_sp = stack_mem->stack_buffer;   // 当前已分配内存块起始地址
+	lp->ctx.ss_size = at.stack_size;   // co_init_curr_thread_env时会 coctx_init，其他情况不会
 
 	lp->cStart = 0;
 	lp->cEnd = 0;
@@ -522,9 +522,9 @@ int co_create( stCoRoutine_t **ppco,const stCoRoutineAttr_t *attr,pfn_co_routine
 {
 	if( !co_get_curr_thread_env() ) 
 	{
-		co_init_curr_thread_env();
+		co_init_curr_thread_env();  // 初始化当前线程的env和第一个协程
 	}
-	stCoRoutine_t *co = co_create_env( co_get_curr_thread_env(), attr, pfn,arg );
+	stCoRoutine_t *co = co_create_env( co_get_curr_thread_env(), attr, pfn,arg );  // env调用深度pCallStack没有改变
 	*ppco = co;
 	return 0;
 }
@@ -558,14 +558,14 @@ void co_swap(stCoRoutine_t* curr, stCoRoutine_t* pending_co);
 void co_resume( stCoRoutine_t *co )
 {
 	stCoRoutineEnv_t *env = co->env;
-	stCoRoutine_t *lpCurrRoutine = env->pCallStack[ env->iCallStackSize - 1 ];
+	stCoRoutine_t *lpCurrRoutine = env->pCallStack[ env->iCallStackSize - 1 ];  // 当前env(线程)下当前协程
 	if( !co->cStart )
 	{
-		coctx_make( &co->ctx,(coctx_pfn_t)CoRoutineFunc,co,0 );
+		coctx_make( &co->ctx,(coctx_pfn_t)CoRoutineFunc,co,0 );  // 设置ctx,co_swap之后执行CoRoutineFunc
 		co->cStart = 1;
 	}
-	env->pCallStack[ env->iCallStackSize++ ] = co;
-	co_swap( lpCurrRoutine, co );
+	env->pCallStack[ env->iCallStackSize++ ] = co;   // 已经存在了，还要继续放到末尾？？
+	co_swap( lpCurrRoutine, co );   // 栈空间切换和寄存器切换
 
 
 }
@@ -594,7 +594,7 @@ void co_reset(stCoRoutine_t * co)
         co->stack_mem->occupy_co = NULL;
 }
 
-void co_yield_env( stCoRoutineEnv_t *env )
+void co_yield_env( stCoRoutineEnv_t *env )   // 将当前线程的cur和last协程切换，协程嵌套栈size-1
 {
 	
 	stCoRoutine_t *last = env->pCallStack[ env->iCallStackSize - 2 ];
@@ -615,11 +615,11 @@ void co_yield( stCoRoutine_t *co )
 	co_yield_env( co->env );
 }
 
-void save_stack_buffer(stCoRoutine_t* occupy_co)
+void save_stack_buffer(stCoRoutine_t* occupy_co)  // 将栈数据拷贝到buffer里面(堆)
 {
 	///copy out
 	stStackMem_t* stack_mem = occupy_co->stack_mem;
-	int len = stack_mem->stack_bp - occupy_co->stack_sp;
+	int len = stack_mem->stack_bp - occupy_co->stack_sp;  // 栈从高到低，ebp-rsp为栈的总长度
 
 	if (occupy_co->save_buffer)
 	{
@@ -632,13 +632,13 @@ void save_stack_buffer(stCoRoutine_t* occupy_co)
 	memcpy(occupy_co->save_buffer, occupy_co->stack_sp, len);
 }
 
-void co_swap(stCoRoutine_t* curr, stCoRoutine_t* pending_co)
+void co_swap(stCoRoutine_t* curr, stCoRoutine_t* pending_co)   // 栈空间切换和寄存器切换
 {
  	stCoRoutineEnv_t* env = co_get_curr_thread_env();
 
 	//get curr stack sp
 	char c;
-	curr->stack_sp= &c;
+	curr->stack_sp= &c;   // 当前协程栈顶
 
 	if (!pending_co->cIsShareStack)
 	{
@@ -656,19 +656,19 @@ void co_swap(stCoRoutine_t* curr, stCoRoutine_t* pending_co)
 		env->occupy_co = occupy_co;
 		if (occupy_co && occupy_co != pending_co)
 		{
-			save_stack_buffer(occupy_co);
+			save_stack_buffer(occupy_co);   // 共享栈保存下occupy_co自己的栈，stack_mem会被pending_co占用
 		}
 	}
 
 	//swap context
-	coctx_swap(&(curr->ctx),&(pending_co->ctx) );
+	coctx_swap(&(curr->ctx),&(pending_co->ctx) );  // 保存当前协程的寄存器，恢复新的协程去执行,执行完之后由co_yield_env切换会当前协程上下文继续执行
 
 	//stack buffer may be overwrite, so get again;
 	stCoRoutineEnv_t* curr_env = co_get_curr_thread_env();
 	stCoRoutine_t* update_occupy_co =  curr_env->occupy_co;
 	stCoRoutine_t* update_pending_co = curr_env->pending_co;
 	
-	if (update_occupy_co && update_pending_co && update_occupy_co != update_pending_co)
+	if (update_occupy_co && update_pending_co && update_occupy_co != update_pending_co)  // 共享栈之前被占用，而且已经保存，将pend协程的栈空间保存到save_buffer
 	{
 		//resume stack buffer
 		if (update_pending_co->save_buffer && update_pending_co->save_size > 0)
@@ -739,19 +739,19 @@ static short EpollEvent2Poll( uint32_t events )
 
 static __thread stCoRoutineEnv_t* gCoEnvPerThread = NULL;
 
-void co_init_curr_thread_env()
+void co_init_curr_thread_env()   // 初始化第一个coroutine时会coctx_init
 {
 	gCoEnvPerThread = (stCoRoutineEnv_t*)calloc( 1, sizeof(stCoRoutineEnv_t) );
 	stCoRoutineEnv_t *env = gCoEnvPerThread;
 
 	env->iCallStackSize = 0;
-	struct stCoRoutine_t *self = co_create_env( env, NULL, NULL,NULL );
+	struct stCoRoutine_t *self = co_create_env( env, NULL, NULL,NULL );  // 第一个协程没有fn
 	self->cIsMain = 1;
 
 	env->pending_co = NULL;
 	env->occupy_co = NULL;
 
-	coctx_init( &self->ctx );
+	coctx_init( &self->ctx );   // set 0
 
 	env->pCallStack[ env->iCallStackSize++ ] = self;
 

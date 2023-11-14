@@ -31,8 +31,8 @@ struct stStackMem_t
 {
 	stCoRoutine_t* occupy_co;
 	int stack_size;
-	char* stack_bp; //stack_buffer + stack_size
-	char* stack_buffer;
+	char* stack_bp; //stack_buffer + stack_size  下一块内存起始地址
+	char* stack_buffer;   // 当前内存块起始地址
 
 };
 
@@ -62,13 +62,13 @@ struct stCoRoutine_t
 	void *pvEnv;
 
 	//char sRunStack[ 1024 * 128 ];
-	stStackMem_t* stack_mem;
+	stStackMem_t* stack_mem;  // 协程运行栈空间(堆上)
 
 
 	//save satck buffer while confilct on same stack_buffer;
-	char* stack_sp; 
+	char* stack_sp;      // 要保存的数据首地址, 栈顶指针
 	unsigned int save_size;
-	char* save_buffer;
+	char* save_buffer;   // 共享栈才需要再保存一次
 
 	stCoSpec_t aSpec[1024];
 
